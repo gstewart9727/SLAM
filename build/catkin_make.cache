@@ -1,0 +1,2 @@
+orb_slam_2_ros:slam
+-DCATKIN_DEVEL_PREFIX=/home/gabriel/MyWorkspace/devel -DCMAKE_INSTALL_PREFIX=/home/gabriel/MyWorkspace/install -G Unix Makefiles
