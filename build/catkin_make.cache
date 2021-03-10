@@ -1,2 +1,0 @@
-ddynamic_reconfigure:orb_slam_2_ros:realsense-ros/realsense2_camera:realsense-ros/realsense2_description:slam
--DCATKIN_DEVEL_PREFIX=/home/gabriel/MyWorkspace/devel -DCMAKE_INSTALL_PREFIX=/home/gabriel/MyWorkspace/install -G Unix Makefiles
