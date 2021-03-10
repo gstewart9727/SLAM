@@ -131,8 +131,11 @@ endif()
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for each subdirectory.
   include("/home/gabriel/MyWorkspace/build/gtest/cmake_install.cmake")
+  include("/home/gabriel/MyWorkspace/build/realsense-ros/realsense2_description/cmake_install.cmake")
+  include("/home/gabriel/MyWorkspace/build/ddynamic_reconfigure/cmake_install.cmake")
   include("/home/gabriel/MyWorkspace/build/slam/cmake_install.cmake")
   include("/home/gabriel/MyWorkspace/build/orb_slam_2_ros/cmake_install.cmake")
+  include("/home/gabriel/MyWorkspace/build/realsense-ros/realsense2_camera/cmake_install.cmake")
 
 endif()
 
