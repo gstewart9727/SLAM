@@ -8,11 +8,18 @@ import rospy
 import cv2
 import numpy as np
 from sensor_msgs.msg import Image
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import *
 from cv_bridge import CvBridge, CvBridgeError
 from copy import deepcopy
-
+import socket, select
+import struct
+import time
+ 
 class image_converter:
+
+    HOST = '192.168.0.54'  # Standard loopback interface address (localhost)
+    PORT = 65438        # Port to listen on (non-privileged ports are > 1023)
+    MAX_BUF = 2
 
     depth_ims = []
     color_ims = []
@@ -24,45 +31,60 @@ class image_converter:
         self.depth_sub = rospy.Subscriber("depth_topic",Image,self.depth_callback)
         self.pose_sub = rospy.Subscriber("pose", PoseStamped, self.pose_callback)
 
-        self.timer = rospy.Timer(rospy.Duration(1.0/30.0), self.time_callback)
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        while True:
+            try:
+                self.sock.connect((self.HOST, self.PORT))
+                self.connections = [self.sock]
+                break
+            except:
+                print("Unable to connect, retrying...")
+                time.sleep(3)
+                continue
 
+        self.timer = rospy.Timer(rospy.Duration(1.0/15.0), self.time_callback)
+        
     def color_callback(self,data):
         try:
-            cv_image = self.bridge.imgmsg_to_cv2(data, "passthrough")
-            self.color_ims.append([data.header.stamp.to_sec(), np.array(cv_image).copy()])
+            if (len(self.color_ims) <= self.MAX_BUF):
+                cv_image = self.bridge.imgmsg_to_cv2(data, "passthrough")
+                self.color_ims.append([data.header.stamp.to_sec(), np.array(cv_image).copy()])
         except CvBridgeError as e:
             print(e)
 
 
     def depth_callback(self, data):
         try:
-            cv_image = self.bridge.imgmsg_to_cv2(data, "passthrough")
-            self.depth_ims.append([data.header.stamp.to_sec(), np.array(cv_image).copy()])
+            if (len(self.depth_ims) <= self.MAX_BUF):
+                cv_image = self.bridge.imgmsg_to_cv2(data, "passthrough")
+                self.depth_ims.append([data.header.stamp.to_sec(), np.array(cv_image).copy()])
         except CvBridgeError as e:
             print(e)
         
 
     def pose_callback(self, data):
-        self.poses.append([data.header.stamp.to_sec(), deepcopy(data.pose)])
+        if (len(self.poses) <= self.MAX_BUF):
+            self.poses.append([data.header.stamp.to_sec(), deepcopy(data.pose)])
 
     def time_callback(self, timer):
         cur_time = rospy.Time.now().to_sec()
         if len(self.depth_ims) and len(self.color_ims) and len(self.poses):
-            print((len(self.depth_ims), len(self.color_ims), len(self.poses)))
+            # print((len(self.depth_ims), len(self.color_ims), len(self.poses)))
             for i in range(len(self.depth_ims)):
                 depth_time = round(self.depth_ims[i][0], 1)
-                print('dep')
-                print(depth_time)
+                # print('dep')
+                # print(depth_time)
                 for j in range(len(self.color_ims)):
                     color_time = round(self.color_ims[j][0], 1)
-                    print('col')
-                    print(color_time)
+                    # print('col')
+                    # print(color_time)
                     for k in range(len(self.poses)):
                         pose_time = round(self.poses[k][0], 1)
-                        print('pos')
-                        print(pose_time)
-                        if depth_time == color_time and color_time == pose_time:
+                        # print('pos')
+                        # print(pose_time)
+                        if depth_time == color_time and ((color_time - pose_time) < 0.3):
                             print("Printing :)")
+
                             # publish - port stuff
                             self.publish(i,j,k)
                             # remove from list and return cause we're done
@@ -83,8 +105,42 @@ class image_converter:
         self.poses = [pose for pose in self.poses if pose[0] < cur_time - 20.0][:100]
 
     def publish(self, depth_ind, color_ind, pose_ind):
-        #TODO Publish stuff to the PC
-        pass
+
+        readable, writeable, exceptional = select.select([], self.connections, [])
+
+        for sock in writeable:
+
+            # Convert frames to numpy arrays
+            depth_np = np.asanyarray(self.depth_ims[depth_ind][1])
+            color_np = np.asanyarray(self.color_ims[color_ind][1])
+
+            # Encode the frames
+            _, depth_encoded = cv2.imencode('.png', depth_np)
+            _, color_encoded = cv2.imencode('.png', color_np)
+            # print(depth_encoded)
+
+            depth_data_encoded = np.array(depth_encoded)
+            depth_str_encoded = depth_data_encoded.tobytes()
+            # print(depth_data_encoded)
+
+            color_data_encoded = np.array(color_encoded)
+            color_str_encoded = color_data_encoded.tobytes()
+
+            pose_np = np.array([
+                self.poses[pose_ind][1].position.x, \
+                self.poses[pose_ind][1].position.y, \
+                self.poses[pose_ind][1].position.z, \
+                self.poses[pose_ind][1].orientation.x, \
+                self.poses[pose_ind][1].orientation.y, \
+                self.poses[pose_ind][1].orientation.z, \
+                self.poses[pose_ind][1].orientation.w \
+            ])
+            pose_encoded = pose_np.tobytes()
+            print(pose_np)
+
+            # Send the data
+            msg = struct.pack('>III', len(depth_str_encoded), len(color_str_encoded), len(pose_encoded)) + depth_str_encoded + color_str_encoded + pose_encoded
+            sock.sendall(msg)
 
 def main(args):
     rospy.init_node('image_converter', anonymous=True)
