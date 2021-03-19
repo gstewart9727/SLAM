@@ -1,9 +1,14 @@
 <launch>
+  <arg name="arg1" doc="IP Address" default="192.168.0.54" />
+  <arg name="arg2" doc="Port" default="65441" />  
   <include file="$(find orb_slam2_ros)/ros/launch/orb_slam2_d435_rgbd.launch" />
   <include file="$(find realsense2_camera)/launch/rs_d435_camera_with_model.launch" />
   <node name="bridge" pkg="bridge" type="bridge" output="screen">
     <remap from="/color_topic" to="/camera/color/image_raw" />
     <remap from="/depth_topic" to="/camera/depth/image_rect_raw" />
+    <remap from="/info_topic" to="/camera/aligned_depth_to_color/camera_info" />
     <remap from="/pose" to="/orb_slam2_rgbd/pose" />
+    <param name="IP" value="$(arg arg1)" />
+    <param name="PORT" value="$(arg arg2)" />
   </node>
 </launch>

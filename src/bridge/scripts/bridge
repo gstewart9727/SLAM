@@ -7,40 +7,34 @@ import sys
 import rospy
 import cv2
 import numpy as np
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import *
 from geometry_msgs.msg import *
 from cv_bridge import CvBridge, CvBridgeError
 from copy import deepcopy
 import socket, select
+from socket import error as sock_error
 import struct
 import time
+import errno
  
 class image_converter:
 
-    HOST = '192.168.0.54'  # Standard loopback interface address (localhost)
-    PORT = 65438        # Port to listen on (non-privileged ports are > 1023)
-    MAX_BUF = 2
+    MAX_BUF = 1
 
     depth_ims = []
-    color_ims = []
+    color_ims = []                                             
     poses = []
 
     def __init__(self):
         self.bridge = CvBridge()
         self.image_sub = rospy.Subscriber("color_topic",Image,self.color_callback)
         self.depth_sub = rospy.Subscriber("depth_topic",Image,self.depth_callback)
+        # self.info_sub = rospy.Subscriber("info_topic",CameraInfo,self.info_callback) // How to gather intrinsics from topic
         self.pose_sub = rospy.Subscriber("pose", PoseStamped, self.pose_callback)
+        
+        print(rospy.get_param("bridge/IP"))
 
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        while True:
-            try:
-                self.sock.connect((self.HOST, self.PORT))
-                self.connections = [self.sock]
-                break
-            except:
-                print("Unable to connect, retrying...")
-                time.sleep(3)
-                continue
+        self.connect()
 
         self.timer = rospy.Timer(rospy.Duration(1.0/15.0), self.time_callback)
         
@@ -65,6 +59,9 @@ class image_converter:
     def pose_callback(self, data):
         if (len(self.poses) <= self.MAX_BUF):
             self.poses.append([data.header.stamp.to_sec(), deepcopy(data.pose)])
+    
+    def info_callback(self, data):
+        print(data)
 
     def time_callback(self, timer):
         cur_time = rospy.Time.now().to_sec()
@@ -106,9 +103,8 @@ class image_converter:
 
     def publish(self, depth_ind, color_ind, pose_ind):
 
-        readable, writeable, exceptional = select.select([], self.connections, [])
-
-        for sock in writeable:
+        try:
+            self.sock.recv(1)
 
             # Convert frames to numpy arrays
             depth_np = np.asanyarray(self.depth_ims[depth_ind][1])
@@ -136,11 +132,32 @@ class image_converter:
                 self.poses[pose_ind][1].orientation.w \
             ])
             pose_encoded = pose_np.tobytes()
-            print(pose_np)
 
             # Send the data
             msg = struct.pack('>III', len(depth_str_encoded), len(color_str_encoded), len(pose_encoded)) + depth_str_encoded + color_str_encoded + pose_encoded
-            sock.sendall(msg)
+            print("Data sent")
+            self.sock.sendall(msg)
+            
+        except sock_error as serr:
+            if serr.errno != 32 and serr.errno != 104:
+                raise (serr)
+            
+            print("Disconnected from receiver")
+            self.connect()
+
+    def connect(self):
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        while True:
+            print(rospy.get_param("bridge/IP"))
+            print(rospy.get_param("bridge/PORT"))
+            try:
+                self.sock.connect((rospy.get_param("bridge/IP"), int(rospy.get_param("bridge/PORT"))))
+                break
+            except:
+                print("Unable to connect, retrying...")
+                time.sleep(3)
+                continue
+
 
 def main(args):
     rospy.init_node('image_converter', anonymous=True)
